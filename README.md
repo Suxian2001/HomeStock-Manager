@@ -45,6 +45,7 @@ build_final.bat
 * **AI Assistance:** Developed using **Vibe Coding** methodology with Cursor & Claude 3.5.
 
 ## 🚀 How to Run (如何运行)
+直接下载apk使用
 ```bash
 # 1. Clone the repo
 git clone [https://github.com/YourUsername/HomeStock-Manager.git](https://github.com/YourUsername/HomeStock-Manager.git)
@@ -54,7 +55,7 @@ npm install
 
 # 3. Start the app
 npx expo start
-
+```
 ## 📄 许可证
 
 本项目仅供学习和个人使用。
