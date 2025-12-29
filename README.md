@@ -24,27 +24,35 @@ npm start
 # 使用提供的构建脚本
 build_final.bat
 
-# 或手动构建
-set EAS_NO_VCS=1
-npx eas build --platform android --profile preview
-```
+## 📱 App Screenshots (项目截图)
+<div style="display: flex; justify-content: space-between;">
+  <img src="./assets/screenshot_home.png" width="30%" />
+  <img src="./assets/screenshot_detail.png" width="30%" />
+  <img src="./assets/screenshot_add.png" width="30%" />
+</div>
 
-## 📱 应用截图
+## ✨ Key Features (核心功能)
+* **Expiration Tracking:** Visual indicators (Red/Yellow/Green) for item freshness.
+* **Smart Categorization:** Custom categories and storage locations.
+* **Sorting & Filtering:** Advanced sorting by date, name, or category.
+* **Offline First:** Data is stored locally using AsyncStorage for privacy and speed.
 
-（应用运行截图）
+## 🛠 Tech Stack (技术栈)
+* **Framework:** React Native (Expo SDK 50)
+* **Language:** TypeScript
+* **Styling:** Tailwind CSS (NativeWind)
+* **AI Assistance:** Developed using **Vibe Coding** methodology with Cursor & Claude 3.5.
 
-## 🛠️ 技术栈
+## 🚀 How to Run (如何运行)
+```bash
+# 1. Clone the repo
+git clone [https://github.com/YourUsername/HomeStock-Manager.git](https://github.com/YourUsername/HomeStock-Manager.git)
 
-- **React Native** + **Expo**
-- **TypeScript**
-- **AsyncStorage** 本地数据存储
-- **Expo Image Picker** 图片处理
+# 2. Install dependencies
+npm install
 
-## 📦 包大小优化
-
-- 移除不必要的开发文件
-- 优化资源文件
-- 精简依赖关系
+# 3. Start the app
+npx expo start
 
 ## 📄 许可证
 
