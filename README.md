@@ -27,11 +27,11 @@ build_final.bat
 
 ## 📱 App Screenshots (项目截图)
 <div style="display: flex; justify-content: space-between;">
-  <img src="./assets/screenshot_1.png" width="30%" />
-  <img src="./assets/screenshot_2.png" width="30%" />
-  <img src="./assets/screenshot_3.png" width="30%" />
-  <img src="./assets/screenshot_4.png" width="30%" />
-  <img src="./assets/screenshot_5.png" width="30%" />
+  <img src="./assets/sscreenshot_1.png" width="30%" />
+  <img src="./assets/sscreenshot_2.png" width="30%" />
+  <img src="./assets/sscreenshot_3.png" width="30%" />
+  <img src="./assets/sscreenshot_4.png" width="30%" />
+  <img src="./assets/sscreenshot_5.png" width="30%" />
 </div>
 
 ## ✨ Key Features (核心功能)
