@@ -1,0 +1,111 @@
+家庭囤货助手 - GitHub推送完整指南
+======================================
+
+如果命令行推送失败，请按以下步骤手动操作：
+
+1. 初始化Git仓库
+   git init
+   git config user.name "Suxian2001"
+   git config user.email "your-email@example.com"
+
+2. 添加所有文件
+   git add .
+
+3. 提交项目
+   git commit -m "家庭囤货助手 v1.5.0 - 完整项目
+
+   ✨ 功能特性:
+   - 物品管理（增删改查）
+   - 智能筛选和排序
+   - 图片上传（1:1比例裁剪）
+   - +/-快速数量调整
+   - 智能归档系统
+   - 过期提醒通知
+   - 本地数据存储
+   - 自定义图标
+
+   🛠️ 技术栈:
+   - React Native + Expo
+   - TypeScript
+   - 本地存储
+   - 图片处理
+   - 推送通知
+
+   📱 包含完整源码和构建脚本
+   版本: 1.5.0
+   开发者: suxian"
+
+4. 连接GitHub仓库
+   git remote add origin https://github.com/Suxian2001/HomeStock-Manager.git
+
+5. 推送代码
+   git push -u origin main
+
+网络问题解决方案：
+====================
+
+如果遇到 "Failed to connect to github.com port 443" 错误：
+
+方法1: 使用代理
+git config --global http.proxy http://proxy-server:port
+git config --global https.proxy http://proxy-server:port
+git push -u origin main
+
+方法2: 禁用SSL验证（临时）
+git config --global http.sslVerify false
+git push -u origin main
+git config --global http.sslVerify true  # 恢复
+
+方法3: 使用HTTP/1.1
+git config --global http.version HTTP/1.1
+git push -u origin main
+
+方法4: 增加缓冲区
+git config --global http.postBuffer 524288000
+git push -u origin main
+
+方法5: 强制推送（如果有冲突）
+git push -u origin main --force
+
+方法6: 分批推送
+# 先推送源码
+git add *.tsx *.ts *.json *.js *.md
+git commit -m "Core source code"
+git push origin main
+
+# 再推送资源文件
+git add assets/ node_modules/
+git commit -m "Assets and dependencies"
+git push origin main
+
+备用方案：
+==========
+
+如果以上都失败：
+
+1. 使用GitHub Desktop
+   - 下载安装 GitHub Desktop
+   - 克隆仓库
+   - 拖拽文件到本地仓库
+   - 提交并推送
+
+2. 使用其他Git客户端
+   - SourceTree
+   - GitKraken
+   - VS Code内置Git
+
+3. 联系网络管理员
+   - 检查是否是公司网络限制
+   - 请求开放443端口
+   - 或使用个人热点
+
+成功标志：
+==========
+
+推送成功后，您会看到：
+- GitHub仓库中有所有文件
+- README.md显示项目截图
+- 可以下载和查看源码
+- 完整的项目结构
+
+祝您推送成功！

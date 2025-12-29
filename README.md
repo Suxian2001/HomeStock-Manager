@@ -11,8 +11,36 @@
 - 📊 **统计信息**：实时显示过期物品统计
 - 🎨 **现代化UI**：简洁直观的用户界面
 
-## 🚀 快速开始
+## 📱 App Screenshots (项目截图)
 
+<div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+  <img src="./assets/sscreenshot_1.jpg" width="48%" />
+  <img src="./assets/sscreenshot_2.jpg" width="48%" />
+</div>
+
+<div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+  <img src="./assets/sscreenshot_3.jpg" width="48%" />
+  <img src="./assets/sscreenshot_4.jpg" width="48%" />
+</div>
+
+<div style="display: flex; justify-content: center;">
+  <img src="./assets/sscreenshot_5.jpg" width="48%" />
+</div>
+
+## ✨ Key Features (核心功能)
+* **Expiration Tracking:** Visual indicators (Red/Yellow/Green) for item freshness.
+* **Smart Categorization:** Custom categories and storage locations.
+* **Sorting & Filtering:** Advanced sorting by date, name, or category.
+* **Offline First:** Data is stored locally using AsyncStorage for privacy and speed.
+
+## 🛠 Tech Stack (技术栈)
+* **Framework:** React Native (Expo SDK 50)
+* **Language:** TypeScript
+* **Styling:** Tailwind CSS (NativeWind)
+* **AI Assistance:** Developed using **Vibe Coding** methodology with Cursor & Claude 3.5.
+
+## 🚀 快速开始
+可以直接下载apk或者按照以下步骤：
 ### 开发环境
 ```bash
 npm install
@@ -23,28 +51,7 @@ npm start
 ```bash
 # 使用提供的构建脚本
 build_final.bat
-
-# 或手动构建
-set EAS_NO_VCS=1
-npx eas build --platform android --profile preview
 ```
-
-## 📱 应用截图
-
-（应用运行截图）
-
-## 🛠️ 技术栈
-
-- **React Native** + **Expo**
-- **TypeScript**
-- **AsyncStorage** 本地数据存储
-- **Expo Image Picker** 图片处理
-
-## 📦 包大小优化
-
-- 移除不必要的开发文件
-- 优化资源文件
-- 精简依赖关系
 
 ## 📄 许可证
 

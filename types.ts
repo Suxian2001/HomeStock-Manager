@@ -5,7 +5,7 @@ export interface Item {
   location: string;
   quantity: number;
   unit: string;
-  expiryDate: string;
+  expiryDate: string; 
   image: string | null;
   note: string;
   createdAt: string;

@@ -1018,7 +1018,7 @@ export default function StockManagerApp() {
             </ScrollView>
               </KeyboardAvoidingView>
           </View>
-          </View>
+        </View>
         </View>
         </View>
 
@@ -1691,7 +1691,7 @@ export default function StockManagerApp() {
             </ScrollView>
 
             <View style={styles.filterButtonsContainer}>
-              <TouchableOpacity
+            <TouchableOpacity
                 onPress={handleReset}
                 style={styles.filterResetButton}
               >
@@ -1700,11 +1700,11 @@ export default function StockManagerApp() {
               <TouchableOpacity
                 onPress={handleConfirm}
                 style={[styles.filterConfirmButton, { flex: 1 }]}
-              >
-                <Text style={styles.filterConfirmButtonText}>
-                  查看结果 ({processedItems.length})
-                </Text>
-              </TouchableOpacity>
+            >
+              <Text style={styles.filterConfirmButtonText}>
+                查看结果 ({processedItems.length})
+              </Text>
+            </TouchableOpacity>
             </View>
           </View>
         </View>
