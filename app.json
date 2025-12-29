@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "家庭囤货助手",
+    "owner": "suxian",
+    "slug": "stock-manager",
+    "version": "1.5.0",
+    "orientation": "portrait",
+    "newArchEnabled": true,
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stockmanager.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3b82f6"
+      },
+      "package": "com.stockmanager.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许访问您的照片以便上传物品图片",
+          "cameraPermission": "允许访问相机以便拍摄物品照片"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "26214ee4-87f6-4644-88cd-ee4c865d32e5"
+      }
+    }
+  }
+}
