@@ -23,6 +23,7 @@ npm start
 ```bash
 # 使用提供的构建脚本
 build_final.bat
+```
 
 ## 📱 App Screenshots (项目截图)
 <div style="display: flex; justify-content: space-between;">
