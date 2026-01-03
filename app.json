@@ -3,7 +3,7 @@
     "name": "家庭囤货助手",
     "owner": "suxian",
     "slug": "stock-manager",
-    "version": "1.5.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "newArchEnabled": true,
     "userInterfaceStyle": "light",

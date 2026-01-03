@@ -1,0 +1,31 @@
+Write-Host "==============================================="
+Write-Host "   家庭囤货助手 v2.0.0 - 正式发布版本"
+Write-Host "==============================================="
+Write-Host ""
+Write-Host "构建配置："
+Write-Host "- 目标平台：Android"
+Write-Host "- 输出格式：APK（适合直接安装分享）"
+Write-Host "- 构建模式：Preview（包含完整功能）"
+Write-Host ""
+
+Write-Host "设置构建环境..."
+$env:EAS_NO_VCS = "1"
+
+Write-Host ""
+Write-Host "开始构建APK文件..."
+Write-Host "这可能需要5-15分钟，请耐心等待..."
+Write-Host ""
+
+npx eas build --platform android --profile preview --non-interactive
+
+Write-Host ""
+Write-Host "==============================================="
+Write-Host "          构建完成！"
+Write-Host "==============================================="
+Write-Host ""
+Write-Host "请访问以下链接下载APK："
+Write-Host "https://expo.dev/accounts/suxian/projects/stock-manager"
+Write-Host ""
+Write-Host "下载后可直接安装到Android手机上分享使用。"
+Write-Host ""
+Read-Host "按回车键退出"

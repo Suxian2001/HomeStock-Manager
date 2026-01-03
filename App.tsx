@@ -11,7 +11,6 @@ import {
   Alert,
   StatusBar,
   SafeAreaView,
-  ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
   Dimensions,
@@ -20,11 +19,86 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Item, FilterState, SortConfig } from './types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
+import { logger } from './logger';
 
 // 生成唯一ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// 图片存储目录
+const IMAGES_DIR = `${FileSystem.documentDirectory}images/`;
+
+// 确保图片目录存在
+const ensureImagesDirectory = async () => {
+  const dirInfo = await FileSystem.getInfoAsync(IMAGES_DIR);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(IMAGES_DIR, { intermediates: true });
+  }
+};
+
+// 保存图片到文件系统：接收临时URI或Base64，返回永久文件路径
+const saveImageToStorage = async (uri: string): Promise<string> => {
+  try {
+    await ensureImagesDirectory();
+    
+    // 如果是Base64数据URI，先保存为临时文件
+    let tempUri = uri;
+    if (uri.startsWith('data:')) {
+      // Base64数据URI，需要先写入临时文件
+      const base64Data = uri.split(',')[1];
+      const tempPath = `${FileSystem.cacheDirectory}temp_${generateId()}.jpg`;
+      await FileSystem.writeAsStringAsync(tempPath, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      tempUri = tempPath;
+    }
+    
+    // 生成唯一文件名
+    const fileName = `${generateId()}.jpg`;
+    const permanentPath = `${IMAGES_DIR}${fileName}`;
+    
+    // 复制文件到永久目录
+    await FileSystem.copyAsync({
+      from: tempUri,
+      to: permanentPath,
+    });
+    
+    // 如果是临时文件，删除它
+    if (uri.startsWith('data:')) {
+      try {
+        await FileSystem.deleteAsync(tempUri, { idempotent: true });
+      } catch (e) {
+        // 忽略删除临时文件失败
+      }
+    }
+    
+    logger.debug('图片存储', `图片已保存到: ${permanentPath}`);
+    return permanentPath;
+  } catch (error) {
+    logger.error('图片存储', '保存图片失败', error);
+    throw error;
+  }
+};
+
+// 删除图片文件：如果传入的是file://路径，从文件系统中删除
+const deleteImageFile = async (uri: string | null) => {
+  if (!uri) return;
+  
+  // 只删除文件系统中的图片（file://路径）
+  if (uri.startsWith('file://') || uri.startsWith(FileSystem.documentDirectory || '')) {
+    try {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+      logger.debug('图片存储', `图片已删除: ${uri}`);
+    } catch (error) {
+      logger.warn('图片存储', '删除图片失败', error);
+      // 不抛出错误，允许继续执行
+    }
+  }
+  // Base64数据URI不需要删除（内存中的临时数据）
+};
 
 // 常量定义
 const MODAL_HEIGHT = Dimensions.get('window').height * 0.9;
@@ -52,6 +126,67 @@ const getExpiryStatus = (expiryDate: string) => {
   return { color: '#16a34a', bgColor: '#dcfce7', label: '安全', icon: 'checkmark-circle', days };
 };
 
+// 检查图片大小（不修改数据，仅用于检查）
+const getImageSize = (image: string | null): number => {
+  if (!image || image.length === 0) return 0;
+  // base64 编码后大小约为原大小的 1.33 倍，所以实际大小约为 base64 长度的 0.75
+  return image.length * 0.75;
+};
+
+// 图片压缩函数：接收文件URI，压缩后返回临时文件URI（不再返回Base64）
+const processImageToLimit = async (uri: string, limitKB: number = 150): Promise<string> => {
+  let quality = 0.8;
+  let width = 800; // 初始限制宽度，对于手机App展示足够清晰且省空间
+  
+  // 循环尝试直到满足大小限制
+  while (quality > 0.1) {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: width } }],
+        { 
+          compress: quality, 
+          format: ImageManipulator.SaveFormat.JPEG,
+          // 不再使用base64，直接保存到文件
+        }
+      );
+      
+      // 检查压缩后的文件大小
+      const fileInfo = await FileSystem.getInfoAsync(result.uri);
+      if (fileInfo.exists && 'size' in fileInfo) {
+        const sizeKB = fileInfo.size / 1024;
+        
+        if (sizeKB <= limitKB) {
+          logger.info('图片压缩', `压缩成功: ${sizeKB.toFixed(2)}KB (质量: ${quality.toFixed(1)})`);
+          return result.uri; // 返回文件URI
+        }
+      }
+      
+      // 如果还大，降低质量
+      quality -= 0.15;
+      // 如果质量已经很低但还是大，缩小尺寸
+      if (quality < 0.4) {
+         width = 600;
+      }
+    } catch (error) {
+      logger.error('图片压缩', '压缩过程出错', error);
+      throw error;
+    }
+  }
+  
+  logger.warn('图片压缩', '已达到最低质量，强制返回');
+  // 最后一次尝试的结果
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 600 } }],
+    { 
+      compress: 0.1, 
+      format: ImageManipulator.SaveFormat.JPEG,
+    }
+  );
+  return result.uri;
+};
+
 export default function StockManagerApp() {
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<string[]>(['食品', '日用品', '药品', '美妆', '清洁']);
@@ -73,45 +208,208 @@ export default function StockManagerApp() {
   });
 
 
+  // 验证物品数据
+  const validateItem = (item: any): item is Item => {
+    return (
+      item &&
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      typeof item.category === 'string' &&
+      typeof item.location === 'string' &&
+      typeof item.quantity === 'number' &&
+      typeof item.unit === 'string' &&
+      typeof item.expiryDate === 'string' &&
+      typeof item.createdAt === 'string'
+    );
+  };
+
+
+  // 清理过大的图片数据，防止超过 SQLite CursorWindow 限制
+  // 只在总数据过大时使用，移除图片以完成保存
+  const removeImagesIfNeeded = (items: Item[]): Item[] => {
+    return items.map(item => ({
+      ...item,
+      image: null
+    }));
+  };
+
+  // 验证并修复物品数组
+  const validateAndFixItems = (items: any[]): Item[] => {
+    if (!Array.isArray(items)) {
+      logger.warn('数据验证', '物品数据不是数组', { items });
+      return [];
+    }
+
+    const validItems: Item[] = [];
+    const invalidItems: any[] = [];
+
+    items.forEach((item, index) => {
+      if (validateItem(item)) {
+        // 验证时保留所有数据，不清理图片（避免丢失已有图片）
+        validItems.push(item);
+      } else {
+        invalidItems.push({ index, item });
+        logger.warn('数据验证', `物品数据无效 (索引: ${index})`, { item });
+      }
+    });
+
+    if (invalidItems.length > 0) {
+      logger.error('数据验证', `发现 ${invalidItems.length} 个无效物品`, { invalidItems });
+    }
+
+    return validItems;
+  };
+
   useEffect(() => {
     const loadData = async () => {
-      try {
-        const savedItems = await AsyncStorage.getItem('stock_items');
-        const savedCategories = await AsyncStorage.getItem('stock_categories');
-        const savedLocations = await AsyncStorage.getItem('stock_locations');
+      logger.info('数据加载', '开始加载数据');
+      const startTime = Date.now();
 
-        if (savedItems) {
-          try {
-            const parsedItems = JSON.parse(savedItems);
-            setItems(parsedItems);
-          } catch (parseError) {
-            console.error('解析物品数据失败:', parseError);
+      try {
+        // 加载物品数据
+        try {
+          const savedItems = await AsyncStorage.getItem('stock_items');
+          logger.debug('数据加载', '读取物品数据', { 
+            hasData: !!savedItems, 
+            dataLength: savedItems?.length || 0 
+          });
+
+          if (savedItems) {
+            try {
+              const parsedItems = JSON.parse(savedItems);
+              logger.debug('数据加载', '解析物品数据成功', { count: parsedItems?.length || 0 });
+              
+              // 验证数据
+              let validItems = validateAndFixItems(parsedItems);
+              
+              // 迁移Base64图片到文件系统
+              const migratedItems = await Promise.all(validItems.map(async (item) => {
+                // 如果是Base64数据URI，需要迁移到文件系统
+                if (item.image && item.image.startsWith('data:')) {
+                  try {
+                    const filePath = await saveImageToStorage(item.image);
+                    logger.debug('数据迁移', `Base64图片已迁移到文件: ${filePath}`);
+                    return { ...item, image: filePath };
+                  } catch (error) {
+                    logger.error('数据迁移', '迁移图片失败', error, { itemId: item.id });
+                    // 迁移失败，移除图片
+                    return { ...item, image: null };
+                  }
+                }
+                return item;
+              }));
+              
+              // 如果有迁移，保存更新后的数据
+              const hasMigration = migratedItems.some((item, index) => item.image !== validItems[index].image);
+              if (hasMigration) {
+                await AsyncStorage.setItem('stock_items', JSON.stringify(migratedItems));
+                logger.info('数据迁移', 'Base64图片已迁移到文件系统');
+              }
+              
+              setItems(migratedItems);
+              
+              if (migratedItems.length !== parsedItems.length) {
+                logger.warn('数据加载', `数据修复: ${parsedItems.length} -> ${migratedItems.length}`);
+              }
+              
+              logger.info('数据加载', `成功加载 ${migratedItems.length} 个物品`);
+            } catch (parseError) {
+              logger.error('数据加载', '解析物品数据失败', parseError, { savedItems: savedItems.substring(0, 200) });
+              
+              // 尝试备份损坏的数据
+              try {
+                const backupKey = `stock_items_backup_${Date.now()}`;
+                await AsyncStorage.setItem(backupKey, savedItems);
+                logger.info('数据加载', '已备份损坏的数据', { backupKey });
+              } catch (backupError) {
+                logger.error('数据加载', '备份损坏数据失败', backupError);
+              }
+              
+              setItems([]);
+            }
+          } else {
+            logger.info('数据加载', '没有保存的物品数据');
+          }
+        } catch (error: any) {
+          // 检查是否是数据过大导致的读取失败
+          if (error?.message?.includes('Row too big') || error?.message?.includes('too large') || error?.message?.includes('CursorWindow')) {
+            logger.error('数据加载', '加载物品数据失败：数据过大无法读取', error);
+            
+            // 数据太大无法读取，尝试清理该键
+            try {
+              await AsyncStorage.removeItem('stock_items');
+              logger.warn('数据加载', '已清理过大的物品数据，请重新添加物品');
+              
+              // 可选：提示用户（但这里不显示 Alert，避免在启动时打扰用户）
+              // Alert.alert('提示', '检测到数据过大，已自动清理。请重新添加物品。');
+            } catch (removeError) {
+              logger.error('数据加载', '清理过大数据失败', removeError);
+            }
+            
+            setItems([]);
+          } else {
+            logger.error('数据加载', '加载物品数据失败', error);
             setItems([]);
           }
         }
 
-        if (savedCategories) {
-          try {
-            const parsedCategories = JSON.parse(savedCategories);
-            setCategories(parsedCategories);
-          } catch (parseError) {
-            console.error('解析分类数据失败:', parseError);
-            setCategories(['食品', '日用品', '药品', '美妆', '清洁']);
+        // 加载分类数据
+        try {
+          const savedCategories = await AsyncStorage.getItem('stock_categories');
+          logger.debug('数据加载', '读取分类数据', { hasData: !!savedCategories });
+
+          if (savedCategories) {
+            try {
+              const parsedCategories = JSON.parse(savedCategories);
+              if (Array.isArray(parsedCategories) && parsedCategories.length > 0) {
+                setCategories(parsedCategories);
+                logger.info('数据加载', `成功加载 ${parsedCategories.length} 个分类`);
+              } else {
+                throw new Error('分类数据格式无效');
+              }
+            } catch (parseError) {
+              logger.error('数据加载', '解析分类数据失败', parseError);
+              setCategories(['食品', '日用品', '药品', '美妆', '清洁']);
+            }
+          } else {
+            logger.info('数据加载', '没有保存的分类数据');
           }
+        } catch (error) {
+          logger.error('数据加载', '加载分类数据失败', error);
+          setCategories(['食品', '日用品', '药品', '美妆', '清洁']);
         }
 
-        if (savedLocations) {
-          try {
-            const parsedLocations = JSON.parse(savedLocations);
-            setLocations(parsedLocations);
-          } catch (parseError) {
-            console.error('解析位置数据失败:', parseError);
-            setLocations(['冰箱', '储物柜', '浴室', '主卧', '玄关']);
+        // 加载位置数据
+        try {
+          const savedLocations = await AsyncStorage.getItem('stock_locations');
+          logger.debug('数据加载', '读取位置数据', { hasData: !!savedLocations });
+
+          if (savedLocations) {
+            try {
+              const parsedLocations = JSON.parse(savedLocations);
+              if (Array.isArray(parsedLocations) && parsedLocations.length > 0) {
+                setLocations(parsedLocations);
+                logger.info('数据加载', `成功加载 ${parsedLocations.length} 个位置`);
+              } else {
+                throw new Error('位置数据格式无效');
+              }
+            } catch (parseError) {
+              logger.error('数据加载', '解析位置数据失败', parseError);
+              setLocations(['冰箱', '储物柜', '浴室', '主卧', '玄关']);
+            }
+          } else {
+            logger.info('数据加载', '没有保存的位置数据');
           }
+        } catch (error) {
+          logger.error('数据加载', '加载位置数据失败', error);
+          setLocations(['冰箱', '储物柜', '浴室', '主卧', '玄关']);
         }
+
+        const loadTime = Date.now() - startTime;
+        logger.info('数据加载', `数据加载完成 (耗时: ${loadTime}ms)`);
 
       } catch (error) {
-        console.error('加载数据失败:', error);
+        logger.error('数据加载', '加载数据时发生严重错误', error);
         Alert.alert('警告', '加载保存的数据时出现错误，已恢复默认设置');
       }
     };
@@ -125,6 +423,7 @@ export default function StockManagerApp() {
   // 初始化通知系统
   const initializeNotifications = async () => {
     try {
+      logger.info('通知系统', '初始化通知系统');
       // 请求通知权限
       const existingStatus = await Notifications.getPermissionsAsync();
 
@@ -135,6 +434,7 @@ export default function StockManagerApp() {
       }
 
       setNotificationsEnabled(finalStatus.status === 'granted');
+      logger.info('通知系统', `通知权限状态: ${finalStatus.status}`);
 
       // 设置通知处理程序
       Notifications.setNotificationHandler({
@@ -146,28 +446,10 @@ export default function StockManagerApp() {
       });
 
     } catch (error) {
-      console.error('初始化通知失败:', error);
+      logger.error('通知系统', '初始化通知失败', error);
     }
   };
 
-  // 添加测试数据（调试用）
-  const addTestData = () => {
-    const testItem: Item = {
-      id: generateId(),
-      name: '测试物品',
-      category: '食品',
-      location: '冰箱',
-      quantity: 1,
-      unit: '个',
-      expiryDate: '2025-12-31',
-      image: null,
-      note: '测试数据',
-      createdAt: new Date().toISOString(),
-      notificationsDisabled: false
-    };
-    setItems(prev => [...prev, testItem]);
-    console.log('添加了测试数据');
-  };
 
 
   // 检查并发送过期提醒
@@ -226,25 +508,66 @@ export default function StockManagerApp() {
               ));
 
             } catch (notifyError) {
-              console.error(`发送 "${item.name}" 通知失败:`, notifyError);
+              logger.error('通知系统', `发送 "${item.name}" 通知失败`, notifyError, { itemId: item.id });
             }
           }
         }
       }
 
     } catch (error) {
-      console.error('检查通知失败:', error);
+      logger.error('通知系统', '检查通知失败', error);
     }
   };
 
   // 保存数据到本地存储
   const saveData = async () => {
+    const startTime = Date.now();
+    logger.debug('数据保存', '开始保存数据', { 
+      itemsCount: items.length, 
+      categoriesCount: categories.length, 
+      locationsCount: locations.length 
+    });
+
     try {
-      await AsyncStorage.setItem('stock_items', JSON.stringify(items));
-      await AsyncStorage.setItem('stock_categories', JSON.stringify(categories));
-      await AsyncStorage.setItem('stock_locations', JSON.stringify(locations));
+        // 保存物品数据（现在只存储路径，体积很小）
+        try {
+          const itemsJson = JSON.stringify(items);
+          await AsyncStorage.setItem('stock_items', itemsJson);
+          
+          logger.debug('数据保存', '物品数据保存成功', { 
+            count: items.length,
+            hasImages: items.filter(item => item.image).length
+          });
+        } catch (error: any) {
+          logger.error('数据保存', '保存物品数据失败', error, { itemsCount: items.length });
+          throw error;
+        }
+
+      // 保存分类数据
+      try {
+        const categoriesJson = JSON.stringify(categories);
+        await AsyncStorage.setItem('stock_categories', categoriesJson);
+        logger.debug('数据保存', '分类数据保存成功', { count: categories.length });
+      } catch (error) {
+        logger.error('数据保存', '保存分类数据失败', error);
+        throw error;
+      }
+
+      // 保存位置数据
+      try {
+        const locationsJson = JSON.stringify(locations);
+        await AsyncStorage.setItem('stock_locations', locationsJson);
+        logger.debug('数据保存', '位置数据保存成功', { count: locations.length });
+      } catch (error) {
+        logger.error('数据保存', '保存位置数据失败', error);
+        throw error;
+      }
+
+      const saveTime = Date.now() - startTime;
+      logger.info('数据保存', `数据保存完成 (耗时: ${saveTime}ms)`);
     } catch (error) {
-      console.error('保存数据失败:', error);
+      logger.error('数据保存', '保存数据时发生严重错误', error);
+      Alert.alert('错误', '保存数据失败，请检查存储空间');
     }
   };
 
@@ -254,12 +577,48 @@ export default function StockManagerApp() {
   // 自动保存数据到本地存储
   React.useEffect(() => {
     const saveDataAsync = async () => {
+      const startTime = Date.now();
+      logger.debug('自动保存', '触发自动保存', { 
+        itemsCount: items.length, 
+        categoriesCount: categories.length, 
+        locationsCount: locations.length 
+      });
+
       try {
-        await AsyncStorage.setItem('stock_items', JSON.stringify(items));
-        await AsyncStorage.setItem('stock_categories', JSON.stringify(categories));
-        await AsyncStorage.setItem('stock_locations', JSON.stringify(locations));
+        // 保存物品数据（现在只存储路径，体积很小）
+        try {
+          const itemsJson = JSON.stringify(items);
+          await AsyncStorage.setItem('stock_items', itemsJson);
+          
+          logger.debug('自动保存', '物品数据保存成功', { 
+            count: items.length,
+            hasImages: items.filter(item => item.image).length
+          });
+        } catch (error: any) {
+          logger.error('自动保存', '保存物品数据失败', error);
+          // 静默处理，避免影响用户体验
+        }
+
+        // 保存分类数据
+        try {
+          await AsyncStorage.setItem('stock_categories', JSON.stringify(categories));
+        } catch (error) {
+          logger.error('自动保存', '保存分类数据失败', error);
+          // 静默处理，避免影响用户体验
+        }
+
+        // 保存位置数据
+        try {
+          await AsyncStorage.setItem('stock_locations', JSON.stringify(locations));
+        } catch (error) {
+          logger.error('自动保存', '保存位置数据失败', error);
+          // 静默处理，避免影响用户体验
+        }
+
+        const saveTime = Date.now() - startTime;
+        logger.debug('自动保存', `自动保存完成 (耗时: ${saveTime}ms)`);
       } catch (error) {
-        console.error('保存数据失败:', error);
+        logger.error('自动保存', '自动保存失败', error);
       }
     };
 
@@ -290,37 +649,71 @@ export default function StockManagerApp() {
   }, []);
 
   // 处理modal提交
-  const handleModalSubmit = React.useCallback((data: {
+  const handleModalSubmit = React.useCallback(async (data: {
     formData: any;
     isEditing: boolean;
     editingItem?: Item;
   }) => {
-    // 同步更新状态
-    if (data.formData.category && !categories.includes(data.formData.category)) {
-      setCategories(prev => [...prev, data.formData.category]);
-    }
-    if (data.formData.location && !locations.includes(data.formData.location)) {
-      setLocations(prev => [...prev, data.formData.location]);
-    }
+    try {
+      // 同步更新状态
+      if (data.formData.category && !categories.includes(data.formData.category)) {
+        setCategories(prev => [...prev, data.formData.category]);
+      }
+      if (data.formData.location && !locations.includes(data.formData.location)) {
+        setLocations(prev => [...prev, data.formData.location]);
+      }
 
-    if (data.isEditing && data.editingItem) {
-      setItems(prev => prev.map(item =>
-        item.id === data.editingItem!.id
-          ? { ...data.formData, id: item.id, createdAt: item.createdAt }
-          : item
-      ));
-      setEditingItem(null);
-    } else {
-      const newItem: Item = {
-        ...data.formData,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-        notificationsDisabled: false
-      };
-      setItems(prev => [...prev, newItem]);
-    }
+      // 处理图片：如果是临时URI或Base64，先保存到文件系统
+      let imagePath = data.formData.image;
+      let oldImagePath: string | null = null;
 
-    setShowAddModal(false);
+      if (data.isEditing && data.editingItem) {
+        // 编辑模式：记录旧图片路径
+        oldImagePath = data.editingItem.image;
+      }
+
+      // 如果图片是临时URI或Base64，需要保存到文件系统
+      if (imagePath && (imagePath.startsWith('file://') || imagePath.startsWith('data:'))) {
+        // 检查是否是临时文件（不在images目录下）
+        const isTempFile = imagePath.startsWith('file://') && !imagePath.includes('/images/');
+        
+        if (isTempFile || imagePath.startsWith('data:')) {
+          // 保存图片到文件系统
+          imagePath = await saveImageToStorage(imagePath);
+          
+          // 如果是编辑模式且更换了图片，删除旧图片
+          if (oldImagePath && oldImagePath !== imagePath) {
+            await deleteImageFile(oldImagePath);
+          }
+        }
+      } else if (data.isEditing && data.editingItem) {
+        // 编辑模式但没有更换图片，保持原图片路径
+        imagePath = data.editingItem.image;
+      }
+
+      if (data.isEditing && data.editingItem) {
+        setItems(prev => prev.map(item =>
+          item.id === data.editingItem!.id
+            ? { ...data.formData, image: imagePath, id: item.id, createdAt: item.createdAt }
+            : item
+        ));
+        setEditingItem(null);
+      } else {
+        const newItem: Item = {
+          ...data.formData,
+          image: imagePath,
+          id: generateId(),
+          createdAt: new Date().toISOString(),
+          notificationsDisabled: false
+        };
+        setItems(prev => [...prev, newItem]);
+      }
+
+      setShowAddModal(false);
+    } catch (error) {
+      logger.error('数据提交', '处理图片失败', error);
+      Alert.alert('错误', '保存图片失败，请重试');
+    }
   }, [categories, locations]);
 
   // 检查全局变量并处理modal提交和关闭 (保留向后兼容)
@@ -375,7 +768,14 @@ export default function StockManagerApp() {
       {
         text: '删除',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          // 找到要删除的物品，获取其图片路径
+          const itemToDelete = items.find(item => item.id === id);
+          if (itemToDelete?.image) {
+            // 删除图片文件
+            await deleteImageFile(itemToDelete.image);
+          }
+          
           setItems(items.filter(item => item.id !== id));
           saveData();
         }
@@ -724,7 +1124,7 @@ export default function StockManagerApp() {
       }
     }, [visible, editingItem]);
 
-    // 图片处理函数
+    // 图片处理函数 - 自动压缩到150KB以下
     const handleImageUpload = React.useCallback(async () => {
       try {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -737,16 +1137,21 @@ export default function StockManagerApp() {
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
           allowsEditing: true,
           aspect: [1, 1],
-          quality: 0.8,
-          base64: true,
+          quality: 1, // 这里可以用高质量，因为我们后面会专门压缩
         });
 
         if (!result.canceled && result.assets[0]) {
-          const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-          setModalFormData(prev => ({ ...prev, image: base64 }));
+          // 使用压缩函数，返回临时文件URI
+          try {
+             const compressedUri = await processImageToLimit(result.assets[0].uri, 150);
+             setModalFormData(prev => ({ ...prev, image: compressedUri }));
+          } catch (e) {
+             Alert.alert('错误', '图片处理失败');
+          }
         }
       } catch (error) {
         Alert.alert('错误', '选择图片失败');
+        logger.error('图片处理', '选择图片失败', error);
       }
     }, []);
 
@@ -761,16 +1166,21 @@ export default function StockManagerApp() {
         const result = await ImagePicker.launchCameraAsync({
           allowsEditing: true,
           aspect: [1, 1],
-          quality: 0.8,
-          base64: true,
+          quality: 1, 
         });
 
         if (!result.canceled && result.assets[0]) {
-          const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-          setModalFormData(prev => ({ ...prev, image: base64 }));
+           // 使用压缩函数，返回临时文件URI
+           try {
+             const compressedUri = await processImageToLimit(result.assets[0].uri, 150);
+             setModalFormData(prev => ({ ...prev, image: compressedUri }));
+           } catch (e) {
+             Alert.alert('错误', '图片处理失败');
+           }
         }
       } catch (error) {
         Alert.alert('错误', '拍照失败');
+        logger.error('图片处理', '拍照失败', error);
       }
     }, []);
 
@@ -1347,31 +1757,6 @@ export default function StockManagerApp() {
               <Text style={styles.hintText}>
                 开启后将在物品到期前30、15、7天发送提醒通知
               </Text>
-              <TouchableOpacity
-                onPress={async () => {
-                  try {
-                    await Notifications.scheduleNotificationAsync({
-                      content: {
-                        title: '🔔 测试通知',
-                        body: '这是一个测试通知，验证通知功能是否正常',
-                        sound: 'default',
-                        priority: Notifications.AndroidNotificationPriority.HIGH,
-                      },
-                      trigger: null,
-                    });
-                    Alert.alert('成功', '测试通知已发送，请检查是否收到');
-                  } catch (error) {
-                    Alert.alert('失败', `发送测试通知失败: ${error instanceof Error ? error.message : '未知错误'}`);
-                  }
-                }}
-                style={styles.settingsButton}
-              >
-                <Ionicons name="notifications" size={16} color="#3b82f6" />
-                <Text style={[styles.settingsButtonText, { color: '#3b82f6' }]}>
-                  发送测试通知
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-              </TouchableOpacity>
           </View>
 
           <View style={styles.settingsCard}>
@@ -1390,6 +1775,7 @@ export default function StockManagerApp() {
               <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
             </TouchableOpacity>
           </View>
+
 
           <View style={styles.dangerCard}>
             <Text style={styles.dangerTitle}>危险区域</Text>
@@ -1420,6 +1806,7 @@ export default function StockManagerApp() {
             </TouchableOpacity>
           </View>
         </View>
+
       </ScrollView>
     );
   };
@@ -2652,5 +3039,74 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600'
-  }
+  },
+  // 日志Modal样式
+  logModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    maxHeight: '80%',
+    margin: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 16
+  },
+  logContent: {
+    maxHeight: 500,
+    padding: 16
+  },
+  logEntry: {
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#cbd5e1'
+  },
+  logEntryError: {
+    backgroundColor: '#fef2f2',
+    borderLeftColor: '#dc2626'
+  },
+  logEntryWarn: {
+    backgroundColor: '#fffbeb',
+    borderLeftColor: '#f59e0b'
+  },
+  logHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4
+  },
+  logLevel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#475569'
+  },
+  logTime: {
+    fontSize: 11,
+    color: '#94a3b8'
+  },
+  logCategory: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 4
+  },
+  logMessage: {
+    fontSize: 14,
+    color: '#1e293b',
+    marginBottom: 4
+  },
+  logError: {
+    fontSize: 12,
+    color: '#dc2626',
+    marginTop: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace'
+  },
+  logData: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace'
+  },
 });
